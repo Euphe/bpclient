@@ -112,8 +112,6 @@ class MessengerView(Frame):
 
     def update_dialogues(self, dialogues):
         self._dialogue_list.dialogues = dialogues
-        with open('debug.txt', 'a') as f:
-            f.write("tick tock")
 
 
 class GUI():
@@ -130,13 +128,16 @@ class GUI():
         self.dialogs_frame = None
         self.dialogue_frame = None
 
+    def update_dialogues(self, dialogues):
+        if self.messenger_view:
+            self.messenger_view.update_dialogues(dialogues)
+
     def screen_func(self, screen):
         self.screen = screen
         self.messenger_view = MessengerView(screen, self.app.dialogues, [], self.app.user_id)
         self.messenger_view.update_dialogues(self.app.dialogues)
         self.messenger_scene = Scene([self.messenger_view], -1, name="Dialogues")
-        self.screen.play([self.messenger_scene], stop_on_resize=True, start_scene=self.messenger_scene)
+        self.screen.play([self.messenger_scene], stop_on_resize=True)#, start_scene=self.messenger_scene)
 
     def tick(self):
         Screen.wrapper(self.screen_func)
-        #sys.exit(0)

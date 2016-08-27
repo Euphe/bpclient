@@ -5,8 +5,13 @@ import hashlib
 import time 
 from interface import GUI, SwitchDialogue
 import datetime 
+import math
+import threading
+import atexit
+
+
 vk_app_id = "5591268"
-UPDATE_PERIOD = 1
+UPDATE_PERIOD = 3
 
 def parse_vk_uri(uri):
     token = re.compile(r'(token=)(\w+)')
@@ -69,15 +74,19 @@ class Dialogue:
         else:
             return self.date.strftime('%d.%m.%y %H:%M')
 
-
-
+"""
+example msg
+{'uid': 43447713, 'date': 1398681688, 'read_state': 1, 'mid': 945033, 'body': 'да', 'from_id': 43447713, 'out': 1}
+"""
 class Message:
-    def __init__(self, message_id, text, from_name, unread, datetime):
+    def __init__(self, message_id,  body, from_user_id, read_state, date, out, from_name=None):
         self.message_id = message_id
-        self.text = text
+        self.body = body
+        self.from_user_id = from_user_id
+        self.read_state = read_state
+        self.date = date
+        self.out = out
         self.from_name = from_name
-        self.unread = unread
-        self.datetime = datetime
 
 
 
@@ -96,14 +105,24 @@ class App():
         self.messages = None
         self.current_dialogue = None
 
+        self.dialogue_timer = None
+        self.message_timer = None
+
+        self.stop = False
+
     @property
     def dialogues(self):
         return self._dialogues
 
     @dialogues.setter
     def dialogues(self, new_value):
-        # Only trigger notification after we've changed selection
-        self._dialogues = new_value
+        if new_value:
+            
+            # Only trigger notification after we've changed selection
+            new_value.sort(key=lambda x: x.date, reverse=True)
+            self._dialogues = new_value
+            if not self.current_dialogue:
+                self.current_dialogue = self._dialogues[0]
             
 
 
@@ -163,39 +182,87 @@ class App():
             if str(d.from_user_id) in uid_to_names.keys():
                 d.from_name = uid_to_names[str(d.from_user_id)]
             #dialogues[i].from_name = names[i]
-
-
         
         return dialogues
 
+"""
+example msg
+{'uid': 43447713, 'date': 1398681688, 'read_state': 1, 'mid': 945033, 'body': 'да', 'from_id': 43447713, 'out': 1}
+
+class Message:
+    def __init__(self, message_id,  body, from_user_id, read_state, date, out, from_name=None):
+        """
+
+
+
     def get_messages(self):
         if self.current_dialogue:
-            messages = self.vk_api.messages.getHistory(user_id=self.current_dialogue)["items"]
+            raw_messages = self.vk_api.messages.getHistory(user_id=str(self.current_dialogue.from_user_id))[1:]
+            with open('debug.txt', 'w', encoding="utf-8") as f:
+                f.write(str(raw_messages))
+
+            messages = []
+            
+            for msg in raw_messages:
+                message = Message(msg["uid"], msg["body"], msg["from_id"], msg["read_state"], msg["date"], msg["out"])
+                messages.append(message)
+
+
+            assert(False)
+
         return messages
 
+    def poll_messages(self):
+        if not self.stop:
+            self.messages = self.get_messages()
+            self.gui.update_messages(self.messages)
+            self.message_timer = threading.Timer(UPDATE_PERIOD, self.poll_messages)
+            self.message_timer.start()
+
+    def poll_dialogues(self):
+        if not self.stop:
+            self.dialogues = self.get_dialogues()
+            self.gui.update_dialogues(self.dialogues)
+            self.dialogue_timer = threading.Timer(UPDATE_PERIOD, self.poll_dialogues)
+            self.dialogue_timer.start()
 
     def main_loop(self):
-        #while True:
-            #if time.clock() % UPDATE_PERIOD == 0:
-        #with open('debug.txt', 'a') as f:
-        #    f.write("tick tock")
-        self.dialogues = self.get_dialogues()
-        #self.messages = self.get_messages(self.current_dialogue)
-        try:
-            self.gui.tick()
-            sys.exit(0)
-        except SwitchDialogue as e:
-            self.current_dialogue = e.dialogue
-            raise(Exception("inactive till messages are implemented"))
-            #self.messages = self.get_messages()
+        while True:
+            # with open('debug.txt', 'a') as f:
+            #     f.write("tick"+'\n')
+            #     f.write(str(int(time.clock()))+'\n')
+            #     f.write(str(int(time.clock()) % UPDATE_PERIOD)+'\n')
+            # if int(time.clock()) % UPDATE_PERIOD == 0:
+            #     
+            #     #self.messages = self.get_messages(self.current_dialogue)
+            # self.dialogue_timer = threading.Timer(UPDATE_PERIOD, self.poll_dialogues)
+            # self.dialogue_timer.daemon = True
+            # self.dialogue_timer.start()
+            self.poll_dialogues()
+            self.poll_messages()
+            try:
+                self.gui.tick()
+                sys.exit(0)
+            except SwitchDialogue as e:
+                self.current_dialogue = e.dialogue
+                raise(Exception("inactive till messages are implemented"))
+                    #self.messages = self.get_messages()
 
+    def cleanup(self):
+        if self.dialogue_timer:
+            self.dialogue_timer.cancel()
             #sys.exit(0)
 
 
 app = App()
 
-app.run()
+try:
+    app.run()
+except Exception as e:
+    app.stop = True
+    raise(e)
 
+atexit.register(app.cleanup)
 
 """
 

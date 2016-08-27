@@ -205,8 +205,9 @@ class DialogueList(ListBox):
 
     @dialogues.setter
     def dialogues(self, new_value):
-        self._dialogues = new_value
-        self.value = self._dialogues[0] if len(self._dialogues) > 0 else None
+        if new_value:
+            self._dialogues = new_value
+            self.value = self._dialogues[0] if len(self._dialogues) > 0 else None
 
 
 class MessageList(ListBox):
