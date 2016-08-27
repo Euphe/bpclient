@@ -2,8 +2,11 @@ import vk
 import os  
 import re
 import hashlib
-
+import time 
+from interface import GUI, SwitchDialogue
+import datetime 
 vk_app_id = "5591268"
+UPDATE_PERIOD = 1
 
 def parse_vk_uri(uri):
     token = re.compile(r'(token=)(\w+)')
@@ -40,25 +43,210 @@ def create_sig(method, params, secret):
     print(request+secret)
     return hashlib.md5(request+secret).hexdigest()
 
-def initial_start():
-    file_exists = os.path.isfile('./token.txt')
-    if file_exists:
-        with open('token.txt') as f:
-            token, user_id = f.read().strip().split('\n')
-    else:
-        token, user_id = vk_login(vk_app_id)
 
-    #login to vk
-    #if login is succesful write token down to file
-    session = vk.Session(token, no_https=False)
-    api = vk.API(session)
-    #print(api.users.get(user_ids=1, sig = create_sig("users/get", "user_ids=1&access_token="+token, secret)))
-    assert(api.users.get(user_ids=1) != None)
+"""
 
-    with open('token.txt', 'w+') as f:
-    	f.write(token +'\n' +user_id)
+example dialogue from vk
 
-    messages = api.messages.get()
-    print(messages)
+{'read_state': 1, 'mid': 1176444, 'out': 0, 'date': 1472050604, 'title': ' ... ', 'uid': 231793188, 'body': '×åðòèë'}
+{'read_state': 1, 'mid': 1174454, 'body': 'Åíòî êàê õî÷åøü', 'title': ' ... ', 'uid': 144248502, 'out': 0, 'date': 1471104886}]
+"""
+class Dialogue:
+    def __init__(self, dialogue_id, body, from_user_id, read_state, date, from_name=None):
+        self.dialogue_id = dialogue_id
+        self.body = body
+        self.from_user_id = from_user_id
+        self.read_state = read_state
+        self.date = date
+        self.from_name = from_name
 
-initial_start()
+
+    @property
+    def readable_time(self):
+        show_date = False
+        if datetime.datetime.today().date() == self.date.date():
+            return self.date.strftime('%H:%M')
+        else:
+            return self.date.strftime('%d.%m.%y %H:%M')
+
+
+
+class Message:
+    def __init__(self, message_id, text, from_name, unread, datetime):
+        self.message_id = message_id
+        self.text = text
+        self.from_name = from_name
+        self.unread = unread
+        self.datetime = datetime
+
+
+
+class App():
+    def __init__(self, vk_api=None, user_id=None, token=None):
+        self.vk_api = vk_api
+        self.user_id = user_id
+        self.token = token
+
+        self.gui = None
+
+        self._dialogues = None
+        self._messages = None
+
+        #todo remove
+        self.messages = None
+        self.current_dialogue = None
+
+    @property
+    def dialogues(self):
+        return self._dialogues
+
+    @dialogues.setter
+    def dialogues(self, new_value):
+        # Only trigger notification after we've changed selection
+        self._dialogues = new_value
+            
+
+
+    def run(self):
+
+        file_exists = os.path.isfile('./token.txt')
+        if file_exists:
+            with open('token.txt') as f:
+                token, user_id = f.read().strip().split('\n')
+        else:
+            token, user_id = vk_login(vk_app_id)
+
+        #login to vk
+        #if login is succesful write token down to file
+        session = vk.Session(token)
+        api = vk.API(session)
+        #print(api.users.get(user_ids=1, sig = create_sig("users/get", "user_ids=1&access_token="+token, secret)))
+        assert(api.users.get(user_ids=1) != None)
+
+        with open('token.txt', 'w+') as f:
+            f.write(token +'\n' +user_id)
+
+
+        self.vk_api = api
+        self.user_id = user_id
+        self.token = token
+
+        self.gui = GUI(self)
+        self.main_loop()
+
+    def get_dialogues(self):
+        temp_dialogues = self.vk_api.messages.getDialogs()[1:]
+        # with open("debug.txt", "w", encoding='utf-8') as f:
+        #     f.write(str(temp_dialogues)+'\n'+str('')+'\n' )
+        # assert(False)
+
+        dialogues = []
+        for d in temp_dialogues:
+            if "chat_id" in d.keys():
+                #its a chat
+                dialogue = Dialogue(d["mid"], d["body"], d["uid"], d["read_state"], datetime.datetime.fromtimestamp(int(d['date'])),d["title"])
+            else:
+                dialogue = Dialogue(d["mid"], d["body"], d["uid"], d["read_state"], datetime.datetime.fromtimestamp(int(d['date'])))
+            dialogues.append(dialogue)
+
+
+        user_ids = [d.from_user_id for d in dialogues if d.from_name == None]
+        users = self.vk_api.users.get(user_ids=user_ids)
+        #names = [u['first_name'] + ' ' + u['last_name'] for u in users]
+        uid_to_names = {}
+        for u in users:
+            uid_to_names[str(u["uid"])] = u['first_name'] + ' ' + u['last_name']
+
+        
+            
+        for d in dialogues:
+            if str(d.from_user_id) in uid_to_names.keys():
+                d.from_name = uid_to_names[str(d.from_user_id)]
+            #dialogues[i].from_name = names[i]
+
+
+        
+        return dialogues
+
+    def get_messages(self):
+        if self.current_dialogue:
+            messages = self.vk_api.messages.getHistory(user_id=self.current_dialogue)["items"]
+        return messages
+
+
+    def main_loop(self):
+        #while True:
+            #if time.clock() % UPDATE_PERIOD == 0:
+        #with open('debug.txt', 'a') as f:
+        #    f.write("tick tock")
+        self.dialogues = self.get_dialogues()
+        #self.messages = self.get_messages(self.current_dialogue)
+        try:
+            self.gui.tick()
+            sys.exit(0)
+        except SwitchDialogue as e:
+            self.current_dialogue = e.dialogue
+            raise(Exception("inactive till messages are implemented"))
+            #self.messages = self.get_messages()
+
+            #sys.exit(0)
+
+
+app = App()
+
+app.run()
+
+
+"""
+
+Dialogs example:
+
+response: {
+count: 886,
+items: [{
+message: {
+id: 1176628,
+date: 1472121481,
+out: 1,
+user_id: 55581920,
+read_state: 1,
+title: ' ... ',
+body: 'но кодить?',
+random_id: -341847832
+},
+in_read: 1176627,
+out_read: 1176628
+}, {
+message: {
+id: 1176555,
+date: 1472114579,
+out: 0,
+user_id: 132536763,
+read_state: 1,
+title: ' ... ',
+body: 'Нуок) справедливо'
+},
+in_read: 1176555,
+out_read: 1176554
+}]
+
+
+"""
+
+"""messages example
+
+response: {
+count: 398,
+items: [{
+id: 1680163,
+body: 'test message',
+user_id: 2314852,
+from_id: 2314852,
+date: 1468343751,
+read_state: 1,
+out: 0
+}],
+in_read: 1680163,
+out_read: 1680162
+}
+"""

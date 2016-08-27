@@ -6,6 +6,7 @@ from asciimatics.exceptions import ResizeScreenError, NextScene, StopApplication
 from asciimatics.event import KeyboardEvent, MouseEvent
 import sys
 import math
+
 def format_dialogue_text(dialogue):
     sender = dialogue["from"]
     unread = dialogue["unread"]
@@ -60,7 +61,7 @@ class DialogueList(ListBox):
                 colour, attr, bg)
 
         # Don't bother with anything else if there are no options to render.
-        if len(self._dialogues) <= 0:
+        if not self._dialogues or len(self._dialogues) <= 0:
             return
 
         # Render visible portion of the text.
@@ -73,7 +74,7 @@ class DialogueList(ListBox):
         dialogue_strs = []
         for i, dialogue in enumerate(self._dialogues):
         #create dialogue template
-            components = [ [ "{0.from_name}", "{0.datetime}" ], [ "{0.body}", "{0.unread_msgs}" ] ]
+            components = [ [ "{0.from_name}", "{0.readable_time}" ], [ "{0.body}", "{0.read_state}" ] ]
             lines = []
             for line in components:
                 line[0] = line[0].format(dialogue)
@@ -119,6 +120,8 @@ class DialogueList(ListBox):
             total_height += len(dial_lines)
 
     def process_event(self, event):
+        if not self._dialogues:
+            return
         if isinstance(event, KeyboardEvent):
             if len(self._dialogues) > 0 and event.key_code == Screen.KEY_UP:
                 # Move up one line in text - use value to trigger on_select.
@@ -168,22 +171,25 @@ class DialogueList(ListBox):
     @value.setter
     def value(self, new_value):
         # Only trigger notification after we've changed selection
-        old_value = self._value
-        self._value = new_value
-        for i, dialogue in enumerate(self._dialogues):
-            if dialogue == new_value:
-                self._dialogue = i
-                break
-        else:
-            self._value = None
-            self._dialogue = -1
-        if old_value != self._value and self._on_change:
-            self._on_change()
+        if self._dialogues:
+            old_value = self._value
+            self._value = new_value
+            for i, dialogue in enumerate(self._dialogues):
+                if dialogue == new_value:
+                    self._dialogue = i
+                    break
+            else:
+                self._value = None
+                self._dialogue = -1
+            if old_value != self._value and self._on_change:
+                self._on_change()
 
     def reset(self):
         # Reset selection - use value to trigger on_select
-        if len(self._dialogues) > 0:
+        if self._dialogues and len(self._dialogues) > 0:
             self._dialogue = 0
+            #with open("debug.txt", "w") as f:
+                #f.write(str(self._dialogues))
             self.value = self._dialogues[self._dialogue]
         else:
             self._dialogue = -1
@@ -240,7 +246,7 @@ class MessageList(ListBox):
                 colour, attr, bg)
 
         # Don't bother with anything else if there are no options to render.
-        if len(self._messages) <= 0:
+        if not self._messages or len(self._messages) <= 0:
             return
 
         # Render visible portion of the text.
@@ -324,6 +330,8 @@ class MessageList(ListBox):
 
 
     def process_event(self, event):
+        if not self._messages:
+            return
         if isinstance(event, KeyboardEvent):
             if len(self._messages) > 0 and event.key_code == Screen.KEY_UP:
                 # Move up one line in text - use value to trigger on_select.
@@ -371,27 +379,29 @@ class MessageList(ListBox):
 
     @value.setter
     def value(self, new_value):
-        # Only trigger notification after we've changed selection
-        old_value = self._value
-        self._value = new_value
-        for i, message in enumerate(self._messages):
-            if message == new_value:
-                self._message = i
-                break
-        else:
-            self._value = None
-            self._message = -1
-        if old_value != self._value and self._on_change:
-            self._on_change()
+        if self._messages:
+            # Only trigger notification after we've changed selection
+            old_value = self._value
+            self._value = new_value
+            for i, message in enumerate(self._messages):
+                if message == new_value:
+                    self._message = i
+                    break
+            else:
+                self._value = None
+                self._message = -1
+            if old_value != self._value and self._on_change:
+                self._on_change()
 
     def reset(self):
-        # Reset selection - use value to trigger on_select
-        if len(self._messages) > 0:
-            self._message = 0
-            self.value = self._messages[self._message]
-        else:
-            self._message = -1
-            self.value = None
+        if self._messages:
+            # Reset selection - use value to trigger on_select
+            if len(self._messages) > 0:
+                self._message = 0
+                self.value = self._messages[self._message]
+            else:
+                self._message = -1
+                self.value = None
 
 
     @property
